@@ -10,6 +10,29 @@ const PORT = Number(process.env.PORT || 3000);
 const jobs = new Map();
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bilibili-mp3-'));
 
+const BATCH_STORE_PATH = path.join(__dirname, 'batch-store.json');
+
+function loadBatchStore() {
+  if (!fs.existsSync(BATCH_STORE_PATH)) {
+    return { version: '1.0', jobs: {}, activeJobId: null, downloadHistory: {} };
+  }
+  try {
+    return JSON.parse(fs.readFileSync(BATCH_STORE_PATH, 'utf8'));
+  } catch (error) {
+    console.error('加载 batch-store.json 失败:' , error.message);
+    return { version: '1.0', jobs: {}, activeJobId: null, downloadHistory: {} };
+  }
+}
+
+function saveBatchStore(store) {
+  try {
+    fs.writeFileSync(BATCH_STORE_PATH, JSON.stringify(store, null, 2), 'utf8');
+  } catch (error) {
+    console.error('保存 batch-store.json 失败:' , error.message);
+    throw error;
+  }
+}
+
 try {
   execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
 } catch {
@@ -119,6 +142,16 @@ const server = http.createServer(async (req, res) => {
       const job = jobs.get(match[1]); if (!job) return json(res, 404, { error: '任务不存在或已过期' });
       if (match[2]) { if (job.status !== 'completed') return json(res, 409, { error: '文件尚未完成' }); res.writeHead(200, headers({ 'Content-Type': 'audio/mpeg', 'Content-Disposition': `attachment; filename="${encodeURIComponent(job.filename)}"` })); return fs.createReadStream(job.outputPath).pipe(res); }
       return json(res, 200, job);
+    }
+    // 批量任务存储API
+    if (req.method === 'GET' && req.url === '/api/batch/store') {
+      const store = loadBatchStore();
+      return json(res, 200, store);
+    }
+    if (req.method === 'POST' && req.url === '/api/batch/store') {
+      const store = await readBody(req);
+      saveBatchStore(store);
+      return json(res, 200, { ok: true });
     }
     json(res, 404, { error: 'Not found' });
   } catch (error) { json(res, 400, { error: error.message }); }
