@@ -113,19 +113,30 @@ async function processSingleVideo(batchJob, videoIndex) {
   await saveBatchJob(batchJob);
 
   let tab = null;
+  let pageLoadListener = null;
+  
   try {
     // 打开视频页面（隐藏标签）
     tab = await chrome.tabs.create({ url: video.url, active: false });
     
-    // 等待页面加载
-    await new Promise(resolve => {
-      const listener = (tabId, changeInfo) => {
+    // 等待页面加载（带超时）
+    await new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        if (pageLoadListener) {
+          chrome.tabs.onUpdated.removeListener(pageLoadListener);
+        }
+        reject(new Error('页面加载超时'));
+      }, 30000); // 30秒超时
+      
+      pageLoadListener = (tabId, changeInfo) => {
         if (tabId === tab.id && changeInfo.status === 'complete') {
-          chrome.tabs.onUpdated.removeListener(listener);
+          clearTimeout(timeoutId);
+          chrome.tabs.onUpdated.removeListener(pageLoadListener);
+          pageLoadListener = null;
           setTimeout(resolve, 2000); // 额外等待2秒确保播放器初始化
         }
       };
-      chrome.tabs.onUpdated.addListener(listener);
+      chrome.tabs.onUpdated.addListener(pageLoadListener);
     });
 
     // 获取视频信息
@@ -210,6 +221,15 @@ async function processSingleVideo(batchJob, videoIndex) {
     await saveBatchJob(batchJob);
     return false;
   } finally {
+    // 清理页面加载监听器
+    if (pageLoadListener) {
+      try {
+        chrome.tabs.onUpdated.removeListener(pageLoadListener);
+      } catch (e) {
+        console.error('移除页面加载监听器失败:', e);
+      }
+    }
+    
     // 确保始终关闭标签页
     if (tab) {
       try {
@@ -220,6 +240,7 @@ async function processSingleVideo(batchJob, videoIndex) {
     }
   }
 }
+
 
 // 批量任务主循环
 async function runBatchJob(batchJob) {
