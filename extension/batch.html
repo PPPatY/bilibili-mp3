@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Bilibili MP3 批量下载管理器</title>
+  <link rel="stylesheet" href="batch.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎵 Bilibili MP3 批量下载管理器</h1>
+    </header>
+
+    <!-- 新建任务区域 -->
+    <section class="section" id="newTaskSection">
+      <h2>📋 新建任务</h2>
+      <div class="form-group">
+        <label for="videoUrlInput">视频链接:</label>
+        <input type="text" id="videoUrlInput" placeholder="粘贴B站视频链接（支持合集/分P视频）" />
+        <button id="parseBtn">解析合集</button>
+      </div>
+
+      <div id="collectionInfo" class="collection-info" hidden>
+        <h3 id="collectionTitle">合集标题</h3>
+        <p class="collection-stats">
+          共 <span id="totalVideos">0</span> 集
+        </p>
+
+        <div class="form-group">
+          <label for="startIndexSelect">起始集数:</label>
+          <select id="startIndexSelect">
+            <option value="0">第1集</option>
+          </select>
+
+          <label for="bitrateSelect">音频码率:</label>
+          <select id="bitrateSelect">
+            <option value="128k">128k（语音）</option>
+            <option value="192k" selected>192k（推荐）</option>
+            <option value="320k">320k（高质量）</option>
+          </select>
+        </div>
+
+        <div class="video-list-preview">
+          <p>视频列表预览:</p>
+          <div id="videoList" class="video-list"></div>
+        </div>
+
+        <button id="startBatchBtn" class="primary-btn">开始批量下载</button>
+      </div>
+    </section>
+
+    <!-- 当前任务区域 -->
+    <section class="section" id="taskPanel" hidden>
+      <h2>📊 当前任务: <span id="currentTaskTitle">任务标题</span></h2>
+
+      <div class="task-progress">
+        <div class="progress-text">
+          进度: 第<span id="currentIndex">0</span>集/共<span id="totalCount">0</span>集
+          (<span id="progressPercent">0</span>%)
+        </div>
+        <div class="progress-bar-container">
+          <div id="taskProgress" class="progress-bar"></div>
+        </div>
+      </div>
+
+      <div class="task-current">
+        <p id="currentStatus">准备中...</p>
+      </div>
+
+      <div id="taskStats" class="task-stats">
+        <span>已完成: <strong id="completedCount">0</strong>个</span>
+        <span>失败: <strong id="failedCount">0</strong>个</span>
+        <span>剩余: <strong id="pendingCount">0</strong>个</span>
+      </div>
+
+      <div class="task-controls">
+        <button id="pauseBtn">⏸ 暂停</button>
+        <button id="resumeBtn" hidden>▶️ 恢复</button>
+        <button id="cancelBtn">⏹ 停止</button>
+      </div>
+    </section>
+
+    <!-- 任务详情区域 -->
+    <section class="section" id="detailsPanel" hidden>
+      <h2>📝 任务详情</h2>
+      <div id="taskDetails" class="task-details"></div>
+    </section>
+  </div>
+
+  <script src="batch.js"></script>
+</body>
+</html>
