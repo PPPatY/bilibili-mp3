@@ -81,4 +81,12 @@ mediaUrlInput.addEventListener('input', () => {
   button.disabled = !mediaUrlInput.value.trim();
 });
 
+// 批量下载按钮
+const batchBtn = document.getElementById('batchBtn');
+if (batchBtn) {
+  batchBtn.addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('batch.html') });
+  });
+}
+
 loadInfo();

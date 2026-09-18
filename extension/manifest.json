@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bilibili MP3 Local",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "将当前 Bilibili 页面中可访问的媒体转换为 MP3（本地使用）",
   "permissions": ["activeTab", "downloads", "storage", "cookies"],
   "host_permissions": [
@@ -20,6 +20,12 @@
       "matches": ["https://www.bilibili.com/video/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["batch.html", "batch.css", "batch.js"],
+      "matches": ["<all_urls>"]
     }
   ]
 }
