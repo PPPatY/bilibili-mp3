@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bilibili MP3</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Bilibili MP3</h1>
+      <p id="title" class="muted">正在读取当前页面…</p>
+      <label class="url-label">媒体地址
+        <input id="mediaUrl" type="url" placeholder="页面播放后自动读取" />
+      </label>
+      <label>音质
+        <select id="bitrate"><option value="128k">128 kbps</option><option value="192k" selected>192 kbps</option><option value="320k">320 kbps</option></select>
+      </label>
+      <button id="convert" disabled>转换并下载</button>
+      <section id="progressPanel" class="progress-panel" hidden>
+        <div class="progress-row"><span id="phase">准备中</span><strong id="percent">0%</strong></div>
+        <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+        <div class="progress-meta"><span id="elapsed">已用时 0 秒</span><span id="fileName"></span></div>
+      </section>
+      <p id="status" class="status"></p>
+      <p class="hint">仅用于你拥有版权或已获授权的内容。</p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
