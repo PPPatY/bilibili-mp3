@@ -145,6 +145,22 @@ button:active {
   margin-bottom: 16px;
 }
 
+.download-preview {
+  margin: 12px 0;
+  padding: 12px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.download-preview p {
+  margin: 0;
+  font-size: 15px;
+  color: #10b981;
+  font-weight: 600;
+}
+
 .video-list-preview {
   margin: 16px 0;
 }
@@ -315,6 +331,28 @@ button:active {
   font-size: 12px;
   color: #666;
   margin-top: 2px;
+}
+
+.cancel-single-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.cancel-single-btn:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+}
+
+.cancel-single-btn:active {
+  transform: translateY(0);
 }
 
 [hidden] {

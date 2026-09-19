@@ -16,6 +16,7 @@ const elements = {
   videoList: document.getElementById('videoList'),
   startIndexSelect: document.getElementById('startIndexSelect'),
   endIndexSelect: document.getElementById('endIndexSelect'),
+  downloadPreview: document.getElementById('downloadPreview'),
   bitrateSelect: document.getElementById('bitrateSelect'),
   startBatchBtn: document.getElementById('startBatchBtn'),
   taskPanel: document.getElementById('taskPanel'),
@@ -106,7 +107,10 @@ function displayCollection(collection) {
     .map((video, index) => `<option value="${index}" ${index === collection.videos.length - 1 ? 'selected' : ''}>第${video.episode}集</option>`)
     .join('');
 
-  // 监听起始集数变化，更新结束集数选项
+  // 更新下载预览
+  updateDownloadPreview();
+
+  // 监听起始集数变化
   elements.startIndexSelect.addEventListener('change', () => {
     const startIdx = parseInt(elements.startIndexSelect.value);
     const endIdx = parseInt(elements.endIndexSelect.value);
@@ -115,6 +119,14 @@ function displayCollection(collection) {
     if (endIdx < startIdx) {
       elements.endIndexSelect.value = startIdx;
     }
+
+    // 更新下载预览
+    updateDownloadPreview();
+  });
+
+  // 监听结束集数变化
+  elements.endIndexSelect.addEventListener('change', () => {
+    updateDownloadPreview();
   });
 
   // 显示视频列表预览
@@ -123,6 +135,19 @@ function displayCollection(collection) {
     .join('');
 
   elements.collectionInfo.hidden = false;
+}
+
+// 更新下载预览
+function updateDownloadPreview() {
+  if (!currentCollection) return;
+
+  const startIdx = parseInt(elements.startIndexSelect.value);
+  const endIdx = parseInt(elements.endIndexSelect.value);
+  const count = endIdx - startIdx + 1;
+
+  elements.downloadPreview.textContent = `将下载 ${count} 集（第${currentCollection.videos[startIdx].episode}集 - 第${currentCollection.videos[endIdx].episode}集）`;
+  elements.downloadPreview.style.color = count > 50 ? '#f59e0b' : '#10b981';
+  elements.downloadPreview.style.fontWeight = '600';
 }
 
 // 开始批量下载
@@ -247,7 +272,7 @@ function updateTaskDetails() {
   const { videos, startIndex } = currentBatchJob;
   const displayVideos = videos.slice(startIndex);
 
-  elements.taskDetails.innerHTML = displayVideos.map(video => {
+  elements.taskDetails.innerHTML = displayVideos.map((video, index) => {
     const statusIcons = {
       completed: '✅',
       processing: '⏳',
@@ -267,6 +292,11 @@ function updateTaskDetails() {
 
     const info = video.filename ? `(${video.filename})` : (video.error ? `错误: ${video.error}` : '');
 
+    // 显示取消按钮：只对pending或failed状态的视频显示
+    const showCancelBtn = (video.status === 'pending' || video.status === 'failed') &&
+                          (currentBatchJob.status === 'running' || currentBatchJob.status === 'paused');
+    const cancelBtn = showCancelBtn ? `<button class="cancel-single-btn" data-video-index="${startIndex + index}">✖ 取消</button>` : '';
+
     return `
       <div class="detail-item ${video.status}">
         <div class="detail-item-icon">${icon}</div>
@@ -274,9 +304,18 @@ function updateTaskDetails() {
           <div class="detail-item-title">第${video.episode}集 - ${video.title}</div>
           <div class="detail-item-info">${statusText} ${info}</div>
         </div>
+        ${cancelBtn}
       </div>
     `;
   }).join('');
+
+  // 绑定单个取消按钮事件
+  document.querySelectorAll('.cancel-single-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const videoIndex = parseInt(e.target.dataset.videoIndex);
+      cancelSingleVideo(videoIndex);
+    });
+  });
 }
 
 // 开始轮询状态
@@ -324,12 +363,48 @@ function resumeBatch() {
 
 // 取消任务
 function cancelBatch() {
-  if (!confirm('确定要停止当前任务吗？已下载的视频会保留。')) {
+  const pendingCount = currentBatchJob.videos.filter(v => v.status === 'pending' || v.status === 'failed').length;
+  const message = pendingCount > 0
+    ? `确定要停止当前任务吗？\n\n已完成: ${currentBatchJob.stats.completed}集\n剩余未下载: ${pendingCount}集\n\n已下载的视频会保留。`
+    : '当前任务已完成所有下载，确定要停止吗？';
+
+  if (!confirm(message)) {
     return;
   }
+
   chrome.runtime.sendMessage({
     type: 'CANCEL_BATCH',
     batchId: currentBatchJob.batchId
+  });
+}
+
+// 取消单个视频
+function cancelSingleVideo(videoIndex) {
+  if (!currentBatchJob || !currentBatchJob.videos[videoIndex]) {
+    return;
+  }
+
+  const video = currentBatchJob.videos[videoIndex];
+
+  if (!confirm(`确定要取消下载《第${video.episode}集 - ${video.title}》吗？`)) {
+    return;
+  }
+
+  // 将该视频标记为skipped
+  chrome.runtime.sendMessage({
+    type: 'SKIP_VIDEO',
+    batchId: currentBatchJob.batchId,
+    videoIndex: videoIndex
+  }, response => {
+    if (response && response.ok) {
+      // 立即更新本地状态
+      currentBatchJob.videos[videoIndex].status = 'skipped';
+      currentBatchJob.stats.pending--;
+      currentBatchJob.stats.skipped++;
+      updateTaskDisplay();
+    } else {
+      alert('取消失败: ' + (response?.error || '未知错误'));
+    }
   });
 }
 

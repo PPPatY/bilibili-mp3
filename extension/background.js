@@ -7,6 +7,14 @@ const API_BASE = 'http://127.0.0.1:3000';
  * [POS]: 扩展的后台消息中心
  */
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // 处理合集解析请求（代理chrome.tabs操作）
+  if (message.type === 'PARSE_COLLECTION_REQUEST') {
+    handleParseCollectionRequest(message.url)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   // 处理单次转换请求
   if (message?.type === 'CONVERT') {
     const payload = message.payload || {};
@@ -70,7 +78,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return true;
   }
-  
+
+  if (message.type === 'SKIP_VIDEO') {
+    if (activeBatchJob && activeBatchJob.batchId === message.batchId) {
+      const videoIndex = message.videoIndex;
+      if (activeBatchJob.videos[videoIndex]) {
+        // 标记为跳过
+        activeBatchJob.videos[videoIndex].status = 'skipped';
+
+        // 更新统计
+        if (activeBatchJob.videos[videoIndex].status === 'pending') {
+          activeBatchJob.stats.pending--;
+        } else if (activeBatchJob.videos[videoIndex].status === 'failed') {
+          activeBatchJob.stats.failed--;
+        }
+        activeBatchJob.stats.skipped++;
+
+        // 保存状态
+        saveBatchJob(activeBatchJob);
+        sendResponse({ ok: true });
+      } else {
+        sendResponse({ ok: false, error: '视频不存在' });
+      }
+    } else {
+      sendResponse({ ok: false, error: '任务未找到' });
+    }
+    return true;
+  }
+
   return false;
 });
 
@@ -299,5 +334,59 @@ async function runBatchJob(batchJob) {
   } finally {
     batchProcessing = false;
     activeBatchJob = null;
+  }
+}
+
+/**
+ * 处理合集解析请求
+ * [INPUT]: batch.js发来的PARSE_COLLECTION_REQUEST消息
+ * [OUTPUT]: 查找或创建标签页，发送PARSE_COLLECTION到content.js
+ * [POS]: chrome.tabs API的代理层
+ */
+async function handleParseCollectionRequest(url) {
+  try {
+    // 提取BV号
+    const bvMatch = url.match(/BV[a-zA-Z0-9]+/);
+    if (!bvMatch) {
+      return { ok: false, error: '无效的视频链接' };
+    }
+    
+    // 查找已打开的标签页
+    const tabs = await chrome.tabs.query({ url: '*://www.bilibili.com/video/*' });
+    let targetTab = tabs.find(tab => tab.url.includes(bvMatch[0]));
+    
+    if (!targetTab) {
+      // 创建新标签页
+      targetTab = await chrome.tabs.create({ url, active: false });
+      
+      // 等待页面加载
+      await new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          chrome.tabs.onUpdated.removeListener(listener);
+          reject(new Error('页面加载超时'));
+        }, 30000);
+        
+        const listener = (tabId, changeInfo) => {
+          if (tabId === targetTab.id && changeInfo.status === 'complete') {
+            clearTimeout(timeoutId);
+            chrome.tabs.onUpdated.removeListener(listener);
+            // 额外等待2秒确保页面初始化
+            setTimeout(resolve, 2000);
+          }
+        };
+        chrome.tabs.onUpdated.addListener(listener);
+      });
+    }
+    
+    // 发送解析消息到content.js
+    const response = await chrome.tabs.sendMessage(targetTab.id, { type: 'PARSE_COLLECTION' });
+    
+    if (response.ok && response.collection) {
+      return { ok: true, collection: response.collection };
+    } else {
+      return { ok: false, error: response.error || '解析失败' };
+    }
+  } catch (error) {
+    return { ok: false, error: error.message };
   }
 }
