@@ -19,7 +19,38 @@ function collectVideoInfo() {
 // 解析合集信息
 function parseCollection() {
   try {
-    // 方案1: 尝试从分P列表解析（单视频多分P）
+    // 获取当前视频的BVID
+    const currentBvid = location.pathname.match(/\/video\/(BV[a-zA-Z0-9]+)/)?.[1] || '';
+
+    // 方案1: 尝试从新版分P列表解析（.video-pod__item）
+    const videoPodItems = document.querySelectorAll('.video-pod__item');
+    if (videoPodItems.length > 1) {
+      const videos = Array.from(videoPodItems).map((item, index) => {
+        const link = item.querySelector('a');
+        const titleText = link?.getAttribute('title') || item.textContent?.trim().split('\n')[0].trim() || `第${index + 1}P`;
+        const href = link?.href || '';
+        const pageMatch = href.match(/[?&]p=(\d+)/);
+        const pageNum = parseInt(pageMatch?.[1] || (index + 1));
+
+        return {
+          bvid: currentBvid,
+          title: titleText,
+          episode: pageNum,
+          url: href || `${location.origin}${location.pathname}?p=${pageNum}`
+        };
+      });
+
+      const mainTitle = document.querySelector('h1')?.textContent?.trim() || '合集';
+      return {
+        ok: true,
+        collection: {
+          title: mainTitle,
+          videos: videos.filter(v => v.bvid)
+        }
+      };
+    }
+
+    // 方案2: 尝试从旧版分P列表解析（.list-box li）
     const pageLinks = document.querySelectorAll('.list-box li');
     if (pageLinks.length > 1) {
       const videos = Array.from(pageLinks).map((li, index) => {
@@ -29,7 +60,7 @@ function parseCollection() {
         const bvMatch = href.match(/\/video\/(BV[a-zA-Z0-9]+)/);
         const pageMatch = href.match(/[?&]p=(\d+)/);
         return {
-          bvid: bvMatch?.[1] || location.pathname.match(/\/video\/(BV[a-zA-Z0-9]+)/)?.[1] || '',
+          bvid: bvMatch?.[1] || currentBvid,
           title: titleText,
           episode: parseInt(pageMatch?.[1] || (index + 1)),
           url: href || `${location.origin}${location.pathname}?p=${index + 1}`
@@ -46,7 +77,7 @@ function parseCollection() {
       };
     }
 
-    // 方案2: 尝试从合集sections解析（系列合集）
+    // 方案3: 尝试从合集sections解析（系列合集）
     const sectionItems = document.querySelectorAll('.video-sections-content-list .video-episode-card');
     if (sectionItems.length > 0) {
       const videos = Array.from(sectionItems).map((item, index) => {
