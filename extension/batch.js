@@ -15,6 +15,7 @@ const elements = {
   totalVideos: document.getElementById('totalVideos'),
   videoList: document.getElementById('videoList'),
   startIndexSelect: document.getElementById('startIndexSelect'),
+  endIndexSelect: document.getElementById('endIndexSelect'),
   bitrateSelect: document.getElementById('bitrateSelect'),
   startBatchBtn: document.getElementById('startBatchBtn'),
   taskPanel: document.getElementById('taskPanel'),
@@ -70,27 +71,11 @@ async function parseCollection() {
   elements.parseBtn.textContent = '解析中...';
 
   try {
-    // 查找或创建标签页
-    const tabs = await chrome.tabs.query({ url: '*://www.bilibili.com/video/*' });
-    let targetTab = tabs.find(tab => tab.url.includes(url.match(/BV[a-zA-Z0-9]+/)?.[0] || ''));
-
-    if (!targetTab) {
-      // 创建新标签页
-      targetTab = await chrome.tabs.create({ url, active: false });
-      // 等待页面加载
-      await new Promise(resolve => {
-        const listener = (tabId, changeInfo) => {
-          if (tabId === targetTab.id && changeInfo.status === 'complete') {
-            chrome.tabs.onUpdated.removeListener(listener);
-            resolve();
-          }
-        };
-        chrome.tabs.onUpdated.addListener(listener);
-      });
-    }
-
-    // 发送解析消息
-    const response = await chrome.tabs.sendMessage(targetTab.id, { type: 'PARSE_COLLECTION' });
+    // 通过background.js代理chrome.tabs操作
+    const response = await chrome.runtime.sendMessage({
+      type: 'PARSE_COLLECTION_REQUEST',
+      url: url
+    });
 
     if (response.ok && response.collection) {
       currentCollection = response.collection;
@@ -116,6 +101,22 @@ function displayCollection(collection) {
     .map((video, index) => `<option value="${index}">第${video.episode}集</option>`)
     .join('');
 
+  // 填充结束集数选择器（默认选中最后一集）
+  elements.endIndexSelect.innerHTML = collection.videos
+    .map((video, index) => `<option value="${index}" ${index === collection.videos.length - 1 ? 'selected' : ''}>第${video.episode}集</option>`)
+    .join('');
+
+  // 监听起始集数变化，更新结束集数选项
+  elements.startIndexSelect.addEventListener('change', () => {
+    const startIdx = parseInt(elements.startIndexSelect.value);
+    const endIdx = parseInt(elements.endIndexSelect.value);
+
+    // 如果结束集数小于起始集数，自动调整为起始集数
+    if (endIdx < startIdx) {
+      elements.endIndexSelect.value = startIdx;
+    }
+  });
+
   // 显示视频列表预览
   elements.videoList.innerHTML = collection.videos
     .map(video => `<div class="video-item">第${video.episode}集 - ${video.title}</div>`)
@@ -132,14 +133,24 @@ async function startBatch() {
   }
 
   const startIndex = parseInt(elements.startIndexSelect.value);
+  const endIndex = parseInt(elements.endIndexSelect.value);
   const bitrate = elements.bitrateSelect.value;
+
+  // 验证集数范围
+  if (endIndex < startIndex) {
+    alert('结束集数不能小于起始集数');
+    return;
+  }
+
+  // 只包含选定范围内的视频
+  const selectedVideos = currentCollection.videos.slice(startIndex, endIndex + 1);
 
   // 创建批量任务对象
   const batchJob = {
     batchId: generateUUID(),
     collectionTitle: currentCollection.title,
     collectionUrl: elements.videoUrlInput.value,
-    videos: currentCollection.videos.map(video => ({
+    videos: selectedVideos.map(video => ({
       ...video,
       status: 'pending',
       jobId: null,
@@ -148,8 +159,8 @@ async function startBatch() {
       filename: null,
       completedAt: null
     })),
-    startIndex: startIndex,
-    currentIndex: startIndex,
+    startIndex: 0,  // 在selectedVideos中从0开始
+    currentIndex: 0,
     status: 'pending',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -159,11 +170,11 @@ async function startBatch() {
       interval: 15000
     },
     stats: {
-      total: currentCollection.videos.length - startIndex,
+      total: selectedVideos.length,
       completed: 0,
       failed: 0,
       skipped: 0,
-      pending: currentCollection.videos.length - startIndex
+      pending: selectedVideos.length
     }
   };
 
