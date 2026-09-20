@@ -25,20 +25,36 @@ function setProgress(progress, phase, startedAt, filename = '') {
 }
 
 async function loadInfo() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !tab.url?.includes('bilibili.com/video/')) {
-    titleEl.textContent = '请先打开 Bilibili 视频页面';
-    return;
-  }
   try {
-    videoInfo = await chrome.tabs.sendMessage(tab.id, { type: 'GET_VIDEO_INFO' });
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    // 快速检查：不是B站视频页直接返回
+    if (!tab?.id || !tab.url?.includes('bilibili.com/video/')) {
+      titleEl.textContent = '请先打开 Bilibili 视频页面';
+      button.disabled = true;
+      return;
+    }
+
+    // 添加1.5秒超时保护，防止卡住popup
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('获取视频信息超时（1.5秒）')), 1500);
+    });
+
+    const messagePromise = chrome.tabs.sendMessage(tab.id, { type: 'GET_VIDEO_INFO' });
+
+    videoInfo = await Promise.race([messagePromise, timeoutPromise]);
+
     titleEl.textContent = videoInfo.title || videoInfo.videoId || '未读取到视频标题';
     mediaUrlInput.value = videoInfo.mediaUrl || '';
     button.disabled = !videoInfo.mediaUrl;
-    if (!videoInfo.mediaUrl) setStatus('未找到可直接访问的媒体地址，请等待视频播放后重试。', true);
+    if (!videoInfo.mediaUrl) {
+      setStatus('未找到可直接访问的媒体地址，请等待视频播放后重试。', true);
+    }
   } catch (error) {
     titleEl.textContent = '无法读取页面信息';
-    setStatus(error.message, true);
+    const errorMsg = error.message || '页面未响应';
+    setStatus(`${errorMsg}，请刷新页面后重试`, true);
+    console.error('[popup] loadInfo失败:', error);
   }
 }
 
@@ -61,7 +77,7 @@ button.addEventListener('click', () => {
     const timer = setInterval(async () => {
       try {
         const result = await fetch(`http://127.0.0.1:3000/api/jobs/${response.jobId}`).then((r) => r.json());
-        if (result.status === 'processing') {
+        if (result.status === 'queued' || result.status === 'processing') {
           setProgress(result.progress || 5, (result.progress || 0) > 0 ? '转换音频' : '下载媒体', startedAt);
         } else if (result.status === 'completed') {
           clearInterval(timer);
@@ -89,4 +105,9 @@ if (batchBtn) {
   });
 }
 
-loadInfo();
+// 延迟加载视频信息，不阻塞popup渲染
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('[popup] DOMContentLoaded，准备加载视频信息');
+  // 使用setTimeout确保popup界面先渲染
+  setTimeout(loadInfo, 0);
+});

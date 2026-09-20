@@ -1,12 +1,12 @@
 const API_BASE = 'http://127.0.0.1:3000';
 
-/**
- * 统一消息处理器
- * [INPUT]: 来自popup.js的CONVERT消息，来自batch.js的批量任务控制消息
- * [OUTPUT]: 处理单次转换和批量任务调度
- * [POS]: 扩展的后台消息中心
- */
+// 添加启动日志
+console.log('[background] Service Worker 启动');
+
+// 统一消息处理器
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[background] 收到消息:', message.type);
+
   // 处理合集解析请求（代理chrome.tabs操作）
   if (message.type === 'PARSE_COLLECTION_REQUEST') {
     handleParseCollectionRequest(message.url)
@@ -38,14 +38,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
-  
+
   // 处理批量任务控制消息
   if (message.type === 'START_BATCH') {
     runBatchJob(message.batchJob);
     sendResponse({ ok: true });
     return true;
   }
-  
+
   if (message.type === 'PAUSE_BATCH') {
     if (activeBatchJob && activeBatchJob.batchId === message.batchId) {
       activeBatchJob.status = 'paused';
@@ -56,7 +56,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return true;
   }
-  
+
   if (message.type === 'RESUME_BATCH') {
     if (activeBatchJob && activeBatchJob.batchId === message.batchId) {
       activeBatchJob.status = 'running';
@@ -67,7 +67,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return true;
   }
-  
+
   if (message.type === 'CANCEL_BATCH') {
     if (activeBatchJob && activeBatchJob.batchId === message.batchId) {
       activeBatchJob.status = 'cancelled';
@@ -109,13 +109,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-/**
- * 批量任务调度器
- * [INPUT]: 依赖 batch.js 的任务消息，content.js 的视频信息，服务端转换API
- * [OUTPUT]: 串行执行批量下载任务，更新任务状态
- * [POS]: 批量下载功能的后端调度中心
- * [PROTOCOL]: 处理 START_BATCH, PAUSE_BATCH, RESUME_BATCH, CANCEL_BATCH 消息
- */
+console.log('[background] 消息监听器已注册');
 
 // 批量任务全局状态
 let activeBatchJob = null;
@@ -126,10 +120,10 @@ async function saveBatchJob(batchJob) {
   try {
     const response = await fetch('http://127.0.0.1:3000/api/batch/store');
     const store = await response.json();
-    
+
     store.jobs[batchJob.batchId] = batchJob;
     store.activeJobId = batchJob.batchId;
-    
+
     await fetch('http://127.0.0.1:3000/api/batch/store', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -149,61 +143,30 @@ async function processSingleVideo(batchJob, videoIndex) {
 
   let tab = null;
   let pageLoadListener = null;
-  
+
   try {
     // 打开视频页面（隐藏标签）
     tab = await chrome.tabs.create({ url: video.url, active: false });
-    
-    // 等待页面加载（带超时）- 优化：不等complete，等loading结束即可
-    await new Promise((resolve, reject) => {
-      let hasLoadingEnded = false;
-      let loadingEndTime = null;
 
+    // 等待页面加载（带超时）
+    await new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         if (pageLoadListener) {
           chrome.tabs.onUpdated.removeListener(pageLoadListener);
         }
-        // 如果loading已经结束过，即使没有complete也继续
-        if (hasLoadingEnded) {
-          console.warn(`[批量下载] 页面未complete但loading已结束，继续处理: ${video.url}`);
-          resolve();
-        } else {
-          console.error(`[批量下载] 页面加载超时: ${video.url}`);
-          reject(new Error('页面加载超时（60秒）'));
-        }
+        console.error(`[批量下载] 页面加载超时: ${video.url}`);
+        reject(new Error('页面加载超时（60秒）'));
       }, 60000); // 60秒超时
 
       pageLoadListener = (tabId, changeInfo) => {
         if (tabId === tab.id) {
           console.log(`[批量下载] 页面状态变化:`, changeInfo);
-
-          // 记录loading结束时间
-          if (changeInfo.status === 'loading' || changeInfo.status === 'interactive') {
-            hasLoadingEnded = false;
-          }
-
-          // complete：理想情况
           if (changeInfo.status === 'complete') {
             clearTimeout(timeoutId);
             chrome.tabs.onUpdated.removeListener(pageLoadListener);
             pageLoadListener = null;
-            console.log(`[批量下载] 页面加载完成(complete): ${video.url}`);
+            console.log(`[批量下载] 页面加载完成: ${video.url}`);
             setTimeout(resolve, 3000); // 额外等待3秒
-          }
-
-          // interactive：DOM可用，不等complete
-          if (changeInfo.status === 'interactive' && !loadingEndTime) {
-            hasLoadingEnded = true;
-            loadingEndTime = Date.now();
-            console.log(`[批量下载] 页面interactive，5秒后继续: ${video.url}`);
-            // 给5秒时间让content script注入
-            setTimeout(() => {
-              clearTimeout(timeoutId);
-              chrome.tabs.onUpdated.removeListener(pageLoadListener);
-              pageLoadListener = null;
-              console.log(`[批量下载] 页面加载完成(interactive): ${video.url}`);
-              resolve();
-            }, 5000);
           }
         }
       };
@@ -213,7 +176,7 @@ async function processSingleVideo(batchJob, videoIndex) {
 
     // 获取视频信息
     const videoInfo = await chrome.tabs.sendMessage(tab.id, { type: 'GET_VIDEO_INFO' });
-    
+
     if (!videoInfo.mediaUrl) {
       throw new Error('未找到媒体地址');
     }
@@ -246,14 +209,14 @@ async function processSingleVideo(batchJob, videoIndex) {
 
     // 轮询转换状态
     let attempts = 0;
-    const maxAttempts = 300; // 最多5分钟
-    
+    const maxAttempts = 300;
+
     while (attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       const statusResponse = await fetch(`http://127.0.0.1:3000/api/jobs/${video.jobId}`);
       const status = await statusResponse.json();
-      
+
       if (status.status === 'completed') {
         video.status = 'completed';
         video.filename = status.filename;
@@ -261,41 +224,33 @@ async function processSingleVideo(batchJob, videoIndex) {
         batchJob.stats.completed++;
         batchJob.stats.pending--;
 
-        // 下载文件（静默下载到默认下载目录）
-        const downloadOptions = {
+        // 下载文件
+        await chrome.downloads.download({
           url: `http://127.0.0.1:3000/api/jobs/${video.jobId}/file`,
           filename: status.filename,
-          saveAs: false // 全部静默下载
-        };
-
-        console.log(`[批量下载] 静默下载文件: ${status.filename}`);
-
-        await chrome.downloads.download(downloadOptions);
+          saveAs: false
+        });
 
         await saveBatchJob(batchJob);
         return true;
       } else if (status.status === 'failed') {
         throw new Error(status.error || '转换失败');
       }
-      
+
       attempts++;
     }
-    
+
     throw new Error('转换超时');
   } catch (error) {
-    console.error(`[批量下载] 处理视频失败: ${video.title}`, error);
-
     video.retries++;
     video.error = error.message;
 
     if (video.retries >= batchJob.settings.retryLimit) {
-      console.warn(`[批量下载] 视频达到最大重试次数，标记为失败: ${video.title} (${video.retries}/${batchJob.settings.retryLimit})`);
       video.status = 'failed';
       batchJob.stats.failed++;
       batchJob.stats.pending--;
     } else {
-      console.log(`[批量下载] 视频失败但可重试: ${video.title} (${video.retries}/${batchJob.settings.retryLimit})`);
-      video.status = 'pending'; // 保持pending状态，等待下一轮重试
+      video.status = 'pending';
     }
 
     await saveBatchJob(batchJob);
@@ -309,7 +264,7 @@ async function processSingleVideo(batchJob, videoIndex) {
         console.error('移除页面加载监听器失败:', e);
       }
     }
-    
+
     // 确保始终关闭标签页
     if (tab) {
       try {
@@ -342,7 +297,7 @@ async function runBatchJob(batchJob) {
         batchProcessing = false;
         return;
       }
-      
+
       if (batchJob.status === 'cancelled') {
         console.log('任务已取消');
         batchProcessing = false;
@@ -353,80 +308,18 @@ async function runBatchJob(batchJob) {
 
       // 跳过已完成或已跳过的视频
       if (video.status === 'completed' || video.status === 'skipped') {
-        console.log(`[批量下载] 跳过已完成/已跳过的视频: ${video.title}`);
-        continue;
-      }
-
-      // 跳过已达到重试上限的失败视频
-      if (video.status === 'failed' && video.retries >= batchJob.settings.retryLimit) {
-        console.log(`[批量下载] 跳过已失败的视频(retries=${video.retries}): ${video.title}`);
         continue;
       }
 
       batchJob.currentIndex = i;
       await saveBatchJob(batchJob);
 
-      console.log(`[批量下载] 开始处理视频 ${i + 1}/${batchJob.videos.length}: ${video.title} (retries=${video.retries})`);
-
       // 处理视频
       const success = await processSingleVideo(batchJob, i);
 
-      if (success) {
-        console.log(`[批量下载] 视频处理成功: ${video.title}`);
-      } else {
-        console.warn(`[批量下载] 视频处理失败: ${video.title}, 当前重试次数: ${video.retries}/${batchJob.settings.retryLimit}`);
-      }
-
-      // 等待间隔（除了最后一个视频）
+      // 等待间隔
       if (i < batchJob.videos.length - 1) {
-        console.log(`[批量下载] 等待 ${batchJob.settings.interval / 1000} 秒后处理下一个视频...`);
         await new Promise(resolve => setTimeout(resolve, batchJob.settings.interval));
-      }
-    }
-
-    // 第一轮处理完成，检查是否有需要重试的视频
-    const pendingVideos = batchJob.videos.filter(v =>
-      v.status === 'pending' && v.retries < batchJob.settings.retryLimit
-    );
-
-    if (pendingVideos.length > 0) {
-      console.log(`[批量下载] 第一轮完成，发现 ${pendingVideos.length} 个待重试视频，开始重试...`);
-
-      // 重试所有pending的视频
-      for (let i = 0; i < batchJob.videos.length; i++) {
-        const video = batchJob.videos[i];
-
-        // 只重试pending且未达到重试上限的视频
-        if (video.status === 'pending' && video.retries < batchJob.settings.retryLimit) {
-          // 检查是否暂停或取消
-          if (batchJob.status === 'paused') {
-            console.log('任务已暂停');
-            batchProcessing = false;
-            return;
-          }
-
-          if (batchJob.status === 'cancelled') {
-            console.log('任务已取消');
-            batchProcessing = false;
-            return;
-          }
-
-          batchJob.currentIndex = i;
-          await saveBatchJob(batchJob);
-
-          console.log(`[批量下载] 重试视频 ${i + 1}/${batchJob.videos.length}: ${video.title} (第${video.retries + 1}次尝试)`);
-
-          const success = await processSingleVideo(batchJob, i);
-
-          if (success) {
-            console.log(`[批量下载] 重试成功: ${video.title}`);
-          } else {
-            console.warn(`[批量下载] 重试失败: ${video.title}, 当前重试次数: ${video.retries}/${batchJob.settings.retryLimit}`);
-          }
-
-          // 等待间隔
-          await new Promise(resolve => setTimeout(resolve, batchJob.settings.interval));
-        }
       }
     }
 
@@ -434,10 +327,6 @@ async function runBatchJob(batchJob) {
     batchJob.status = 'completed';
     batchJob.currentIndex = batchJob.videos.length;
     await saveBatchJob(batchJob);
-
-    const successCount = batchJob.videos.filter(v => v.status === 'completed').length;
-    const failedCount = batchJob.videos.filter(v => v.status === 'failed').length;
-    console.log(`[批量下载] 任务完成！成功: ${successCount}, 失败: ${failedCount}, 总计: ${batchJob.videos.length}`);
   } catch (error) {
     console.error('批量任务执行失败:', error);
     batchJob.status = 'failed';
@@ -448,35 +337,25 @@ async function runBatchJob(batchJob) {
   }
 }
 
-/**
- * 处理合集解析请求
- * [INPUT]: batch.js发来的PARSE_COLLECTION_REQUEST消息
- * [OUTPUT]: 查找或创建标签页，发送PARSE_COLLECTION到content.js
- * [POS]: chrome.tabs API的代理层
- */
 async function handleParseCollectionRequest(url) {
   try {
-    // 提取BV号
     const bvMatch = url.match(/BV[a-zA-Z0-9]+/);
     if (!bvMatch) {
       return { ok: false, error: '无效的视频链接' };
     }
-    
-    // 查找已打开的标签页
+
     const tabs = await chrome.tabs.query({ url: '*://www.bilibili.com/video/*' });
     let targetTab = tabs.find(tab => tab.url.includes(bvMatch[0]));
-    
+
     if (!targetTab) {
-      // 创建新标签页
       targetTab = await chrome.tabs.create({ url, active: false });
-      
-      // 等待页面加载
+
       await new Promise((resolve, reject) => {
         const timeoutId = setTimeout(() => {
           chrome.tabs.onUpdated.removeListener(listener);
           console.error(`[解析合集] 页面加载超时: ${url}`);
           reject(new Error('页面加载超时（60秒）'));
-        }, 60000); // 60秒超时
+        }, 60000);
 
         const listener = (tabId, changeInfo) => {
           if (tabId === targetTab.id) {
@@ -485,7 +364,6 @@ async function handleParseCollectionRequest(url) {
               clearTimeout(timeoutId);
               chrome.tabs.onUpdated.removeListener(listener);
               console.log(`[解析合集] 页面加载完成: ${url}`);
-              // 额外等待3秒确保页面初始化
               setTimeout(resolve, 3000);
             }
           }
@@ -494,10 +372,9 @@ async function handleParseCollectionRequest(url) {
         console.log(`[解析合集] 开始加载页面: ${url}, tabId: ${targetTab.id}`);
       });
     }
-    
-    // 发送解析消息到content.js
+
     const response = await chrome.tabs.sendMessage(targetTab.id, { type: 'PARSE_COLLECTION' });
-    
+
     if (response.ok && response.collection) {
       return { ok: true, collection: response.collection };
     } else {
@@ -507,3 +384,5 @@ async function handleParseCollectionRequest(url) {
     return { ok: false, error: error.message };
   }
 }
+
+console.log('[background] Service Worker 初始化完成');

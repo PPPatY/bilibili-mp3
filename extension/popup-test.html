@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Test Popup</title>
+  <style>
+    body { padding: 20px; min-width: 300px; }
+  </style>
+</head>
+<body>
+  <h1>测试弹窗</h1>
+  <p id="time">加载时间：计算中...</p>
+  <script>
+    const startTime = performance.now();
+    document.getElementById('time').textContent = `加载时间：${Math.round(performance.now() - startTime)}ms`;
+    console.log('[popup-test] 弹窗已加载，耗时:', Math.round(performance.now() - startTime), 'ms');
+  </script>
+</body>
+</html>

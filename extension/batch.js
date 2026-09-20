@@ -189,10 +189,11 @@ async function startBatch() {
     status: 'pending',
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    downloadDirectory: null,  // 首次下载时会弹出选择器并保存路径
     settings: {
       bitrate: bitrate,
       retryLimit: 3,
-      interval: 15000
+      interval: 5000
     },
     stats: {
       total: selectedVideos.length,
